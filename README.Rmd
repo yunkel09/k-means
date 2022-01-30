@@ -1,0 +1,28 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+# Agrupación k-means y PCA
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+Bienvenidos. Este repositorio contiene los datos y los scripts para la
+realización de un modelo k-means y PCA
+
+El proyecto contiene cuatro componentes principales:
+
+1. Recolección y limpieza de datos.
+2. Análisis Exploratorio (EDA)
+3. Modelado
+
+El modelado se realiza bajo el framework tidymodels.
