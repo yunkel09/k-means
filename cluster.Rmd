@@ -39,7 +39,7 @@ knitr::opts_chunk$set(echo        = TRUE,
                       fig.align   = "center")
 ```
 
-# cluster {.tabset .tabset-fade .tabset-pills}
+# Mall {.tabset .tabset-fade .tabset-pills}
 
 ## Descripción
 
@@ -87,7 +87,7 @@ options(warn = -1,
 		  scipen = 999,
 		  dplyr.summarise.inform = FALSE,
 		  tibble.print_min = 5,
-		  pillar.sigfig = 2,
+		  pillar.sigfig = 4,
 		  readr.show_col_types = FALSE)
 ```
 
@@ -110,9 +110,8 @@ import::from(factoextra, fviz_dist, fviz_cluster)
 import::from(NbClust, NbClust)
 import::from(clValid, clValid, optimalScores)
 import::from(scales, percent_format)
-# import::from(formattable, color_tile)
-# import::from(patchwork, plot_layout, plot_annotation)
-# import::from(caret, nearZeroVar)
+import::from(formattable, color_tile)
+import::from(fpc, cluster.stats)
 # import::from(parallel, detectCores, makePSOCKcluster, stopCluster)
 # import::from(tidytext, reorder_within, scale_y_reordered, scale_x_reordered)
 # import::from(doParallel, registerDoParallel)
@@ -122,7 +121,7 @@ import::from(kableExtra, .except = "group_rows")
 import::from(DataExplorer, plot_intro, plot_bar, plot_density)
 import::from(conectigo, cargar_fuentes)
 import::from(colorblindr, scale_fill_OkabeIto)
-pacman::p_load(tidymodels, tidyverse)
+pacman::p_load(cluster, FeatureImpCluster, flexclust, tidymodels, tidyverse)
 ```
 
 ## Funciones
@@ -150,12 +149,38 @@ rlt <- function(texto, color) {
 	b <- "'>"
 	c <- "</span>"
 	t <- str_c("**", texto, "**")
-	
 	f <- str_c(a, color, b)
-   
 	glue::glue(f, t, c) 
 	
-    
+}
+```
+
+```{r}
+colort <- function(vec, colorv, paleta, usarv = T) {
+	
+	# show_col(viridis_pal(option = "turbo")(30))
+	# paleta solo pueden ser A (magma), B (inferno), C (plasma),
+	# D (viridis) y E(cividis)
+	# rojo:     #F4354D
+	# amarillo: #FCA108
+	# verde:    #00AB40
+	if (usarv == T) {
+		
+		cell_spec(vec,
+				 color = "white",
+				 bold = TRUE,
+				 background = spec_color(x = colorv, 
+				 								option = paleta, 
+				 								direction = 1))
+	} else {
+		
+		cell_spec(vec,
+				 color = "white",
+				 bold = TRUE,
+				 background = colorv)
+	}
+	
+	
 }
 ```
 
@@ -190,6 +215,10 @@ ggplot(data = data, mapping = mapping) +
 set.seed(2021)
 ```
 
+```{r}
+colorx <- c(rojo = "#F4354D", amarillo = "#FCA108", verde = "#00AB40")
+```
+
 
 ```{r}
 cargar_fuentes()
@@ -211,7 +240,7 @@ drako <- theme_bw(base_family = "yano", base_size = 14) +
 ```
 
 ```{r}
-theme_set(yunkel)
+theme_set(drako)
 ```
 
 # Carga
@@ -266,7 +295,7 @@ desbalance con 112 casos para Female y 88 casos para Male.
 
 (ref:pairs) Seleccionar y visualizar los datos
 
-```{r pairs, fig.cap ='(ref:pairs)', fig.width = 12, fig.asp = 0.7}
+```{r pairs, fig.cap ='(ref:pairs)', fig.width = 10, fig.asp = 0.6}
 mall %>%
 	select(gender:score) %>% 
 	ggpairs(., aes(colour = gender), 
@@ -327,7 +356,7 @@ a que el valor es distinto a 0.5.
 
 (ref:vat) Evaluación visual de tendencia
 
-```{r vat, fig.cap ='(ref:vat)', fig.width = 11, fig.asp = 0.6}
+```{r vat, fig.cap ='(ref:vat)', fig.width = 9, fig.asp = 0.6}
 fviz_dist(mall_dis, lab_size = .1, show_labels = F)
 ```
 
@@ -347,32 +376,7 @@ set.seed(2021)
 nclu <- NbClust(mall_std, method = "kmeans", min.nc = 2, max.nc = 10)
 ```
 
-```{r, paged.print = FALSE}
-(iclu <- nclu$Best.nc %>%
-	as_tibble(.name_repair = make_clean_names) %>%
-	slice(1) %>%
-	pivot_longer(cols     = everything(),
-					 names_to  = "metrica",
-					 values_to = "nclus") %>% 
-	arrange(nclus))
-```
-
-Vemos la cantidad de clústers sugerido por cada métrica. En este caso solo se
-evaluaron 26 métricas y no las 30. Las faltantes fueron: gap, gamma, gplus y tau.
-
-Veamos el recuento:
-
-```{r, optima}
-iclu %>% 
-	tabyl(nclus) %>% 
-	adorn_pct_formatting() %>% 
-	arrange(desc(n)) %>% 
-	rename(metricas = n) %>% 
-	tabla("Cantidad óptima de clústers")
-```
-
-En la tabla \@ref(tab:optima) vemos que **5 de los estadísticos proponen crear
-únicamente 2 grupos.**
+Vemos que **5 de los estadísticos proponen crear únicamente 2 grupos.**
 
 ## Estabilidad
 
@@ -398,19 +402,65 @@ diferentes y tomará la más óptima, lo que conducirá a una mejor estabilidad 
 la clasificación.
 
 
-Con la función `tidy()` resumimos a nivel de clúster y nos dará los centros de
-de cada uno de ellos.
+# Representación e interpretación
+
 
 ```{r}
+mall %>% 
+	bind_cols(cluster = mall_km$cluster) %>% 
+	slice_sample(n = 3)
+```
+
+Aquí podemos ver en que cluster se clasificó a cada individuo.
+
+Ahora, con la función `tidy()` podemos resumir las características principales
+de cada grupo
+
+```{r, tb}
 tidy(mall_km)
 ```
+
+<br/>
+
+- **Cardinalidad:** Los grupos tienen un tamaño bastante homogéneo con una
+diferencia de solo 6 observaciones entre ellos.
+
+- **Variabilidad intra-grupo** (*withinss*): El grupo 1 es el más variable,
+pudiendo significar que las observaciones dentro de cada grupo no son tan
+homogéneas u uniformes.
+
+- **Centroides:** Vemos los valores medios de cada variable en cada grupo.
+Debido a que están escaladas obtenemos valores centrados en cero.
+
+	- **Edad:** El grupo 2 tiene más edad.
+	- **Ingresos:** El grupo 2 tiene ligeramente más ingresos con valores muy
+	cercanos a la media.
+	- **Puntuación:** El grupo 2 tiene una mayor puntuación.
+
+- **Grupos:**
+
+```{r}
+mall %>% 
+	bind_cols(cluster = mall_km$cluster) %>% 
+	select(-id) %>% 
+   group_by(cluster) %>% 
+	summarise(across(where(is.numeric), mean)) %>% 
+	mutate(
+		cluster = as.factor(cluster),
+		across(is.numeric, ~ color_tile("#fd625e", "#91CF60")(.x)),
+	) %>% tabla("Resumen")
+```
+
+<br/>
+
+El grupo 1 destaca por edad y el grupo 2 destaca puntuación.
 
 Con `augment()` podemos agregar las clasificaciones de puntos al conjunto de
 datos original.
 
-(ref:aumento) 
+(ref:aumento) Ingresos contra edad
 
-```{r aumento, fig.cap ='(ref:aumento)', fig.width = 11, fig.asp = 0.7}
+```{r, aumento, fig.cap ='(ref:aumento)', fig.width = 8, fig.asp = 0.6}
 augment(mall_km, mall_std) %>% 
 	ggplot(aes(age, income, color = .cluster)) +
 	geom_point() + drako
@@ -429,12 +479,16 @@ inq <- glance(mall_km) %>%
 	mutate(calidad = percent_format(accuracy = 0.01)(betweenss / totss))
 ```
 
-
-```{r calidad-inicial, paged.print = FALSE}
-inq %>% tabla(cap = "Calidad de la partición")
+```{r, tb-02}
+inq %>% 
+	mutate(quality = colort(calidad, usarv = F, colorv = colorx[1])) %>% 
+	select(-calidad) %>% 
+	tabla(cap = "Calidad de la partición")
 ```
 
-En la tabla \@ref(tab:calidad-inicial) vemos que la calidad es del
+<br/>
+
+En la tabla \@ref(tab:tb-02) vemos que la calidad es del
 `r inq$calidad`.  Este valor no tiene una interpretación real en términos
 absolutos, excepto que una mayor calidad significa un mayor porcentaje
 explicado, sin embargo, es más esclarecedor cuando se compara con la calidad de
@@ -444,15 +498,104 @@ Esta es la razón por la que comparamos particiones a través de su calidad solo
 para particiones que tienen la misma cantidad de clústeres.
 
 ```{r}
-fviz_cluster(mall_km, mall_std, ellipse.type = "norm", main = "k = 2")
+cl_kcca <- as.kcca(mall_km, mall_std)
+barplot(cl_kcca)
 ```
 
+- El grupo 1 tiene mayores valores para edad y los menores valores para el score
+de compra.
 
-# Representación e interpretación
+- El grupo 2 lo opuesto, mayores valores de score y menores valores de edad.
 
 ```{r}
-
+barplot(cl_kcca, bycluster = FALSE)
 ```
 
+Vamos a visualizar todas las variables de manera conjunta (la función utiliza un
+PCA y colorea los grupos formados). Aquí he agregado etiquetas según la
+agrupación previa de las observaciones para hacer una comparación visual.
 
-# Referencias
+```{r}
+fviz_cluster(mall_km, mall_std, 
+             labelsize = 8,
+             main = "k = 2 grupos",
+             geom = "point") + 
+  geom_text(label = paste(mall$gender, 1:nrow(mall), sep="_"),  size = 2.5,
+            colour = c("darkgreen","blue", "red")[mall$gender]) +
+	drako
+```
+
+<br/>
+
+Vemos que existen algunas observaciones mal clasificadas, ya que hay mujeres en
+el grupo de hombre y viceversa.
+
+# Importancia de las variables
+
+```{r}
+importance <- FeatureImpCluster(cl_kcca, as.data.table(mall_std))
+plot(importance)
+```
+
+<br/>
+
+- La variable más importante es score, pero solo marginalmente con respecto a la
+edad, ya que score tiene 0.325 y edad 0.305.
+
+- El grupo 2 es el que tiene mayor score, mientras que el 1 es el que tiene
+menores puntuaciones de esta variable.
+
+- El grupo 1 es el que registró mayor edad.
+
+# Validación
+
+```{r}
+sk <- silhouette(mall_km$cluster, mall_dis) # gráfico de silueta
+plot(sk, main = "Silhouette plot - Kmeans",
+cex.names=0.8, col=1:2, nmax=100)
+```
+
+<br/>
+
+- El primer grupo tiene un valor de silueta medio de 0.30 y el segundo grupo con
+97 observaciones tiene una silueta de 0.37
+
+- El valor de promedio de ancho de silueta es bajo.
+
+- En ambos grupos nos encontramos con observaciones por debajo de 0.25 (punto de
+corte) lo cual podría indicar que no están bien agrupados.
+
+Veamos si las observaciones han sido clasificadas correctamente.
+
+```{r}
+table(mall$gender, mall_km$cluster)
+```
+
+- Tenemos que el grupo 1 contiene 55 observaciones female y 48 observaciones
+male.
+
+- Los grupos no son del todo completos ni homogéneos.
+
+Calculamos el índice de Rand ajustado que mide el acuerdo de la agrupación con
+la clasificación previa. Toma valores en [-1, 1]; donde -1 es sin acuerdo y 1 un
+acuerdo perfecto.
+
+```{r}
+rand <- cluster.stats(d = mall_dis, alt.clustering = as.numeric(mall$gender),
+                      clustering=as.numeric(mall_km$cluster))
+```
+
+```{r}
+rand$corrected.rand
+```
+
+**La agrupación es mala**
+
+# Conclusión
+
+La agrupación utilizando 2 grupos no fué buena. En la tabla de validación
+externa vemos que las mujeres se repartieron casi equitativamente entre ambos
+grupos.
+
+La variable más importante fue el score, pero solo ligeramente por encima de la
+edad.
